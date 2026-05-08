@@ -6,6 +6,8 @@
 
 `safepush` is a safety-first git automation CLI. It scans changed files for risky content, builds deterministic commit plans, and can execute commit/push with strict guardrails. You don't need to worry about anymore commit messages. safepush will write messages for you to understand your code and changes.
 
+Current version: `0.2.0`
+
 ## Install
 
 ```bash
@@ -129,6 +131,25 @@ Run events record timestamp, branch, remote, files, findings summary, override r
 ```bash
 pytest -q
 ```
+
+## Release Discipline
+
+For every major feature or important bug fix:
+
+1. Update user-facing behavior docs in `README.md`.
+2. Add an entry to `CHANGELOG.md`.
+3. Bump version in `pyproject.toml`.
+4. Run tests before pushing:
+
+```bash
+python -m pytest -q
+```
+
+Version bump guide:
+
+- patch (`x.y.Z`): bug fixes only
+- minor (`x.Y.0`): backward-compatible features
+- major (`X.0.0`): breaking CLI or behavior contracts
 
 ## GitHub Beta Launch (1-Week Dogfooding)
 
