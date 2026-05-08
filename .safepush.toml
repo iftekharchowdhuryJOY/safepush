@@ -9,8 +9,8 @@ fail_closed = true
 [git]
 remote = "origin"
 branch = ""
-commit_mode = "grouped"
 push = true
+commit_mode = "smart"
 
 [safety]
 dry_run_default = true
@@ -29,3 +29,8 @@ deny_globs = [
     "*token*",
 ]
 allow_globs = []
+
+[commit]
+message_mode = "deterministic"
+
+
