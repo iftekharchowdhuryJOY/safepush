@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import re
+from fnmatch import fnmatch
 from pathlib import Path
-from pathspec import PathSpec
+
+try:
+    from pathspec import PathSpec  # type: ignore[reportMissingImports]
+except ModuleNotFoundError:  # pragma: no cover - exercised only when dep missing
+    PathSpec = None
 from safepush.config import AppConfig
 from safepush.models import FileChange, ScanFinding, ScanReport
 
@@ -30,16 +35,22 @@ COMPILED_SECRET = _compile_patterns(SECRET_PATTERNS)
 COMPILED_PII = _compile_patterns(PII_PATTERNS)
 
 
+def _matches_deny_glob(path: str, deny_globs: list[str]) -> bool:
+    if PathSpec is not None:
+        deny_spec = PathSpec.from_lines("gitignore", deny_globs)
+        return bool(deny_spec.match_file(path))
+    return any(fnmatch(path, pattern) for pattern in deny_globs)
+
+
 def scan_changes(changes: list[FileChange], cfg: AppConfig) -> ScanReport:
     report = ScanReport()
-    deny_spec = PathSpec.from_lines("gitignore", cfg.safety.deny_globs)
 
     try:
         for ch in changes:
             p = Path(ch.path)
             report.scanned_files += 1
 
-            if deny_spec.match_file(ch.path):
+            if _matches_deny_glob(ch.path, cfg.safety.deny_globs):
                 report.findings.append(
                     ScanFinding(
                         kind="denylist_path",

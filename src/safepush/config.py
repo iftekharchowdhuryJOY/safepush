@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import tomllib
-import tomli_w
+from typing import Any
+
+try:
+    import tomli_w  # type: ignore[reportMissingImports]
+except ModuleNotFoundError:  # pragma: no cover - exercised only when dep missing
+    tomli_w = None
 
 
 DEFAULT_CONFIG_PATH = Path(".safepush.toml")
@@ -59,11 +64,42 @@ def _deep_get(dct: dict, key: str, default):
     return dct.get(key, default) if isinstance(dct, dict) else default
 
 
+def _toml_literal(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_literal(item) for item in value) + "]"
+    raise TypeError(f"Unsupported TOML value type: {type(value)!r}")
+
+
+def _fallback_toml_dumps(data: dict[str, Any]) -> str:
+    lines: list[str] = []
+    for section, value in data.items():
+        if isinstance(value, dict):
+            lines.append(f"[{section}]")
+            for key, item in value.items():
+                lines.append(f"{key} = {_toml_literal(item)}")
+            lines.append("")
+        else:
+            lines.append(f"{section} = {_toml_literal(value)}")
+    if lines and lines[-1] != "":
+        lines.append("")
+    return "\n".join(lines)
+
+
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
     if not path.exists():
         return AppConfig()
 
-    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise RuntimeError(f"Invalid config file '{path}': {exc}") from exc
     scanner = raw.get("scanner", {})
     git = raw.get("git", {})
     safety = raw.get("safety", {})
@@ -117,5 +153,9 @@ def init_default_config(path: Path = DEFAULT_CONFIG_PATH, force: bool = False) -
         "audit_log_path": ".safepush-audit.log",
     }
 
-    path.write_text(tomli_w.dumps(default), encoding="utf-8")
+    if tomli_w is not None:
+        rendered = tomli_w.dumps(default)
+    else:
+        rendered = _fallback_toml_dumps(default)
+    path.write_text(rendered, encoding="utf-8")
     return path
