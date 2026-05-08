@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status: Beta](https://img.shields.io/badge/status-beta-orange)](https://github.com/<your-org-or-user>/safepush)
 
-`safepush` is a safety-first git automation CLI. It scans changed files for risky content, builds deterministic commit plans, and can execute commit/push with strict guardrails.
+`safepush` is a safety-first git automation CLI. It scans changed files for risky content, builds deterministic commit plans, and can execute commit/push with strict guardrails. You don't need to worry about anymore commit messages. safepush will write messages for you to understand your code and changes.
 
 ## Install
 
@@ -28,8 +28,11 @@ safepush config init
 - `safepush scan`: scan changed/untracked files and print safety findings.
 - `safepush plan`: show deterministic commit grouping and messages.
 - `safepush run`: run the full pipeline (scan -> plan -> dry-run or execute).
+- `safepush preview`: intent command for dry-run preview (no git writes).
 - `safepush push`: intent command for safe stage/commit/push (or `--dry-run` preview).
 - `safepush fix`: diagnose common git blockers and show remediation actions.
+- `safepush fix --apply`: apply safe auto-remediations (with confirmation, or `--yes`).
+- `safepush fix --apply --remote-url <url>`: auto-remediate missing remote configuration.
 - `safepush` (no subcommand): launch interactive wizard flow.
 
 ## Workflows
@@ -84,11 +87,17 @@ Commit grouping is controlled by config:
 
 - `git.commit_mode = "grouped"`: one commit for all planned files
 - `git.commit_mode = "per_file"`: one commit per file
+- `git.commit_mode = "smart"`: split commits by file category/top-level area
 
 Push target:
 
 - remote from `git.remote` (default `origin`)
 - branch from `git.branch` if set, otherwise current branch
+
+Commit message mode is configurable:
+
+- `commit.message_mode = "deterministic"`: built-in diff-aware message generation (default)
+- `commit.message_mode = "llm"` or `"hybrid"`: reserved for optional model-assisted generation with deterministic fallback
 
 ## Interactive Wizard
 
