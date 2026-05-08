@@ -1,0 +1,31 @@
+audit_log_path = ".safepush-audit.log"
+
+[scanner]
+enabled = true
+detect_secrets = true
+detect_pii = true
+fail_closed = true
+
+[git]
+remote = "origin"
+branch = ""
+commit_mode = "grouped"
+push = true
+
+[safety]
+dry_run_default = true
+allow_override_flag = true
+deny_globs = [
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "id_rsa",
+    "id_dsa",
+    "credentials*.json",
+    "*secret*",
+    "*token*",
+]
+allow_globs = []

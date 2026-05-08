@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "safepush"
+version = "0.1.0"
+description = "Safe git automation CLI with secret/PII guardrails"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.12.3",
+  "rich>=13.7.1",
+  "gitpython>=3.1.43",
+  "pathspec>=0.12.1",
+  "tomli-w>=1.0.0",
+]
+authors = [{name = "You"}]
+
+[project.scripts]
+safepush = "safepush.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
