@@ -19,7 +19,8 @@ def changed_and_untracked(repo: Repo) -> list[FileChange]:
     out: list[FileChange] = []
 
     for item in repo.index.diff(None):
-        out.append(FileChange(path=item.a_path, status="M"))
+        status = getattr(item, "change_type", "M") or "M"
+        out.append(FileChange(path=item.a_path, status=status))
 
     for untracked in repo.untracked_files:
         out.append(FileChange(path=untracked, status="??"))
@@ -179,8 +180,10 @@ def apply_execution_plan(
     for commit in plan.commits:
         if not commit.files:
             continue
-        repo.index.add(commit.files)
-        if not repo.index.diff("HEAD") and not repo.untracked_files:
+        # Stage add/modify/delete for just this commit group.
+        repo.git.add("-A", "--", *commit.files)
+        staged_for_group = repo.git.diff("--cached", "--name-only", "--", *commit.files).strip()
+        if not staged_for_group:
             continue
         new_commit = repo.index.commit(commit.message)
         commit_hashes.append(new_commit.hexsha)
