@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from git import Repo, InvalidGitRepositoryError, NoSuchPathError
 from git.exc import GitCommandError
+from safepush.commitmsg import summarize_diff
 from safepush.planner import ExecutionPlan
 from safepush.models import FileChange
 
@@ -119,6 +120,33 @@ def detect_repository_issues(repo: Repo, remote_name: str) -> list[str]:
     return issues
 
 
+def set_upstream_to_remote_branch(repo: Repo, remote_name: str) -> str:
+    if repo.head.is_detached:
+        raise RuntimeError("Cannot set upstream from detached HEAD.")
+    branch = repo.active_branch.name
+    target = f"{remote_name}/{branch}"
+    try:
+        repo.git.rev_parse("--verify", target)
+    except Exception as exc:
+        raise RuntimeError(f"Remote branch '{target}' does not exist.") from exc
+    try:
+        repo.git.branch("--set-upstream-to", target, branch)
+    except GitCommandError as exc:
+        raise RuntimeError(f"Failed setting upstream to '{target}': {exc}") from exc
+    return target
+
+
+def add_or_update_remote(repo: Repo, remote_name: str, remote_url: str) -> None:
+    existing = {remote.name: remote for remote in repo.remotes}
+    try:
+        if remote_name in existing:
+            repo.git.remote("set-url", remote_name, remote_url)
+        else:
+            repo.create_remote(remote_name, remote_url)
+    except GitCommandError as exc:
+        raise RuntimeError(f"Failed configuring remote '{remote_name}': {exc}") from exc
+
+
 def resolve_push_target(repo: Repo, remote_name: str, configured_branch: str = "") -> tuple[str, str]:
     branch = configured_branch
     if not branch:
@@ -166,3 +194,23 @@ def apply_execution_plan(
             raise RuntimeError(f"Failed to push to {remote}/{branch}: {exc}") from exc
 
     return commit_hashes
+
+
+def build_diff_summaries(repo: Repo, changes: list[FileChange]) -> dict[str, str]:
+    summaries: dict[str, str] = {}
+    for change in changes:
+        try:
+            if change.status == "??":
+                p = Path(change.path)
+                if not p.exists() or p.is_dir():
+                    summaries[change.path] = "new file"
+                    continue
+                text = p.read_text(encoding="utf-8", errors="ignore")
+                added = len(text.splitlines())
+                summaries[change.path] = f"hunks=1 +{added}/-0"
+            else:
+                diff = repo.git.diff("--", change.path)
+                summaries[change.path] = summarize_diff(diff)
+        except Exception:
+            summaries[change.path] = ""
+    return summaries

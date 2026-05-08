@@ -26,8 +26,16 @@ class ScannerConfig:
 class GitConfig:
     remote: str = "origin"
     branch: str = ""
-    commit_mode: str = "grouped"  # grouped | per_file
+    commit_mode: str = "grouped"  # grouped | per_file | smart
     push: bool = True
+
+
+@dataclass
+class CommitConfig:
+    message_mode: str = "deterministic"  # deterministic | llm | hybrid
+    model_provider: str = "none"  # none | local | openai_compatible
+    model_name: str = ""
+    api_key_env: str = "SAFEPUSH_MODEL_API_KEY"
 
 
 @dataclass
@@ -56,6 +64,7 @@ class SafetyConfig:
 class AppConfig:
     scanner: ScannerConfig = field(default_factory=ScannerConfig)
     git: GitConfig = field(default_factory=GitConfig)
+    commit: CommitConfig = field(default_factory=CommitConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
     audit_log_path: str = ".safepush-audit.log"
 
@@ -102,6 +111,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
         raise RuntimeError(f"Invalid config file '{path}': {exc}") from exc
     scanner = raw.get("scanner", {})
     git = raw.get("git", {})
+    commit = raw.get("commit", {})
     safety = raw.get("safety", {})
 
     return AppConfig(
@@ -116,6 +126,12 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
             branch=_deep_get(git, "branch", ""),
             commit_mode=_deep_get(git, "commit_mode", "grouped"),
             push=_deep_get(git, "push", True),
+        ),
+        commit=CommitConfig(
+            message_mode=_deep_get(commit, "message_mode", "deterministic"),
+            model_provider=_deep_get(commit, "model_provider", "none"),
+            model_name=_deep_get(commit, "model_name", ""),
+            api_key_env=_deep_get(commit, "api_key_env", "SAFEPUSH_MODEL_API_KEY"),
         ),
         safety=SafetyConfig(
             dry_run_default=_deep_get(safety, "dry_run_default", True),
@@ -143,6 +159,12 @@ def init_default_config(path: Path = DEFAULT_CONFIG_PATH, force: bool = False) -
             "branch": "",
             "commit_mode": "grouped",
             "push": True,
+        },
+        "commit": {
+            "message_mode": "deterministic",
+            "model_provider": "none",
+            "model_name": "",
+            "api_key_env": "SAFEPUSH_MODEL_API_KEY",
         },
         "safety": {
             "dry_run_default": True,

@@ -8,7 +8,9 @@ from rich.table import Table
 from safepush.audit import write_audit_log, write_run_audit_event
 from safepush.config import DEFAULT_CONFIG_PATH, init_default_config, load_config
 from safepush.gitops import (
+    add_or_update_remote,
     apply_execution_plan,
+    build_diff_summaries,
     changed_and_untracked,
     detect_repository_issues,
     get_repo,
@@ -16,6 +18,7 @@ from safepush.gitops import (
     has_remote,
     preview_git_actions,
     resolve_push_target,
+    set_upstream_to_remote_branch,
 )
 from safepush.models import ScanReport
 from safepush.planner import build_plan
@@ -229,7 +232,8 @@ def plan():
         raise typer.Exit(code=1)
 
     report = scan_changes(changes, cfg)
-    execution_plan = build_plan(changes, report, cfg)
+    diff_summaries = build_diff_summaries(repo, changes)
+    execution_plan = build_plan(changes, report, cfg, diff_summaries=diff_summaries)
 
     if execution_plan.blocked:
         console.print("[red]Plan blocked.[/red]")
@@ -315,7 +319,8 @@ def run(
             )
         raise typer.Exit(code=3)
 
-    execution_plan = build_plan(changes, report, cfg)
+    diff_summaries = build_diff_summaries(repo, changes)
+    execution_plan = build_plan(changes, report, cfg, diff_summaries=diff_summaries)
     _render_plan(execution_plan)
 
     remote, push_branch = resolve_push_target(repo, cfg.git.remote, cfg.git.branch)
@@ -374,8 +379,26 @@ def push(
 
 
 @app.command()
-def fix():
-    """Diagnose current git blockers and show next safe actions."""
+def preview(
+    override: bool = typer.Option(False, "--override", help="Override blocked safety findings for this run only."),
+    reason: str | None = typer.Option(None, "--reason", help="Required with --override. Explain explicit risk intent."),
+    audit_log: bool = typer.Option(True, "--audit-log/--no-audit-log"),
+):
+    """Intent command: preview safe stage/commit/push plan without writes."""
+    push(dry_run=True, override=override, reason=reason, audit_log=audit_log)
+
+
+@app.command()
+def fix(
+    apply: bool = typer.Option(False, "--apply", help="Apply safe remediations for known issues."),
+    yes: bool = typer.Option(False, "--yes", help="Apply without interactive confirmations."),
+    remote_url: str | None = typer.Option(
+        None,
+        "--remote-url",
+        help="Remote URL used to auto-remediate NO_REMOTE when applying fixes.",
+    ),
+):
+    """Diagnose current git blockers and optionally apply safe remediations."""
     cfg = _load_cfg_or_exit()
     try:
         repo = get_repo()
@@ -407,7 +430,53 @@ def fix():
     for issue in issues:
         table.add_row(issue, recommendations.get(issue, "Review git state and resolve manually."))
     console.print(table)
-    raise typer.Exit(code=1)
+
+    if not apply:
+        raise typer.Exit(code=1)
+
+    # Safe, deterministic remediations only.
+    apply_results: list[str] = []
+    for issue in issues:
+        if issue == "NO_REMOTE":
+            if not remote_url:
+                apply_results.append("NO_REMOTE: remote URL required (--remote-url) for auto-apply")
+                continue
+            should_apply = yes or typer.confirm(f"Set remote '{cfg.git.remote}' to '{remote_url}'?", default=True)
+            if not should_apply:
+                apply_results.append("NO_REMOTE: skipped by user")
+                continue
+            try:
+                add_or_update_remote(repo, cfg.git.remote, remote_url)
+                apply_results.append(f"NO_REMOTE: configured remote '{cfg.git.remote}'")
+            except RuntimeError as exc:
+                apply_results.append(f"NO_REMOTE: failed ({exc})")
+            continue
+
+        if issue == "NO_UPSTREAM":
+            should_apply = yes or typer.confirm("Apply fix for NO_UPSTREAM now?", default=True)
+            if not should_apply:
+                apply_results.append("NO_UPSTREAM: skipped by user")
+                continue
+            try:
+                target = set_upstream_to_remote_branch(repo, cfg.git.remote)
+                apply_results.append(f"NO_UPSTREAM: set upstream to {target}")
+            except RuntimeError as exc:
+                apply_results.append(f"NO_UPSTREAM: failed ({exc})")
+        else:
+            apply_results.append(f"{issue}: manual action required")
+
+    result_table = Table(title="fix apply results")
+    result_table.add_column("Result")
+    for line in apply_results:
+        result_table.add_row(line)
+    console.print(result_table)
+
+    remaining = detect_repository_issues(repo, cfg.git.remote)
+    if remaining:
+        console.print("[yellow]Some issues remain unresolved.[/yellow]")
+        raise typer.Exit(code=1)
+
+    console.print("[green]All detected issues resolved.[/green]")
 
 
 def run_interactive():
@@ -490,7 +559,8 @@ def run_interactive():
             )
             raise typer.Exit(code=3)
 
-    execution_plan = build_plan(changes, report, cfg)
+    diff_summaries = build_diff_summaries(repo, changes)
+    execution_plan = build_plan(changes, report, cfg, diff_summaries=diff_summaries)
     _render_plan(execution_plan)
     execute_now = typer.confirm("Execute commit+push now?", default=not cfg.safety.dry_run_default)
     intent = decide_execution_intent(execute_now, cfg)
